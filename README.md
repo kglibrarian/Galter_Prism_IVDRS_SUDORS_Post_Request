@@ -20,6 +20,7 @@ Articles*, *Peer-reviewed Publications*) so the child communities can be created
 | `05_Prism_Staging_Deposit.ipynb` + `prism_deposit.py` | Deposits the workbook to **Prism staging**: checks vocabularies against Prism, creates the community, invites members, creates drafts, uploads files and publishes into the community. |
 | `06_Prism_Production_Deposit.ipynb` | The same for **Prism production**, with an extra typed confirmation on every step that changes Prism. |
 | `07_Prism_Community_Report.ipynb` | Read-only: lists every published record in the community into a spreadsheet, one tab per child community, with the DOI to cite (the parent DOI for reports, the publisher's DOI for articles). |
+| `08_Metadata_Review_Workbook.ipynb` | Read-only: builds the metadata review workbook (one row per Prism record joined to its deposit-workbook row, file names, SharePoint links, original sources, preparation notes, and columns for the reviewer). |
 | `config.example.py` | Template for your keys and tokens. |
 | `paths.py` | Where the notebooks read from (`data/`) and write to (`output/`). |
 | `organize_folders.py` | One-time move of an older, flat project folder into `data/` and `output/`. |

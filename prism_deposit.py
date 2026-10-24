@@ -735,3 +735,110 @@ def save_report(rows, path, community_title):
         ws.cell(i, 1, f"{name}: {len(rs)} records").font = Font(name="Arial", size=10)
     wb.save(path)
     return {n: len(rs) for n, rs in tabs}
+
+
+# ---------------------------------------------------------------- metadata review workbook
+def _sharepoint_link(base, rel_path):
+    if not base:
+        return None
+    base = quote(base.rstrip("/"), safe=":/%")         # encodes spaces such as "Shared Documents"
+    return base + "/" + "/".join(quote(p) for p in str(rel_path).replace("\\", "/").split("/"))
+
+def save_review_workbook(records, registry, workbook_path, out_path, sharepoint_files_url=None):
+    """One workbook for the metadata review: every Prism record joined to its row in the deposit workbook,
+    its file name(s), a link to each file on SharePoint, and the original source it came from."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.worksheet.datavalidation import DataValidation
+    wb_in = openpyxl.load_workbook(workbook_path, read_only=True, data_only=True)
+    main = {r["record_id"]: r for r in _rows(wb_in["Metadata for Deposit"], 1, 3)}
+    files = {}
+    for r in _rows(wb_in["Files"]):
+        files.setdefault(r["record_id"], []).append(r)
+    wb_in.close()
+    prism = {r["record_id"]: r for r in report_rows(records, registry) if r["record_id"]}
+
+    head = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    purple = PatternFill("solid", fgColor="4E2A84"); teal = PatternFill("solid", fgColor="1F4E5F")
+    yellow = PatternFill("solid", fgColor="FFF2CC")
+    body = Font(name="Arial", size=10); link = Font(name="Arial", size=10, color="0563C1", underline="single")
+    wrap = Alignment(wrap_text=True, vertical="top")
+
+    def sheet(wb, name, cols, rows, widths, review_cols=(), links=()):
+        ws = wb.create_sheet(name)
+        for c, h in enumerate(cols, 1):
+            x = ws.cell(1, c, h); x.font = head; x.alignment = wrap
+            x.fill = teal if h in review_cols else purple
+            ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = widths.get(h, 14)
+        for i, r in enumerate(rows, 2):
+            for c, h in enumerate(cols, 1):
+                v = r.get(h); x = ws.cell(i, c, v); x.font = body; x.alignment = wrap
+                if h in links and v and str(v).startswith("http"):
+                    x.hyperlink = v; x.font = link
+                if h in review_cols:
+                    x.fill = yellow
+        ws.freeze_panes = "C2"
+        if rows: ws.auto_filter.ref = f"A1:{openpyxl.utils.get_column_letter(len(cols))}{len(rows) + 1}"
+        return ws
+
+    rec_rows, file_rows = [], []
+    for rid in sorted(set(main) | set(prism)):
+        m, p, fl = main.get(rid, {}), prism.get(rid, {}), files.get(rid, [])
+        names = [f["file_name"] for f in fl]
+        if len(names) > 1:
+            folder = str(names[0]).replace("\\", "/").rsplit("/", 1)[0]
+            sp = _sharepoint_link(sharepoint_files_url, folder)
+            shown = f"{len(names)} files in {folder}/"
+        else:
+            sp = _sharepoint_link(sharepoint_files_url, names[0]) if names else None
+            shown = names[0] if names else None
+        rec_rows.append({
+            "record_id": rid, "Title": p.get("Title") or m.get("Title"),
+            "Resource type": m.get("Resource type"), "Child community": m.get("Child community keyword(s)"),
+            "Prism record": p.get("Prism record"), "DOI to cite": p.get("DOI to cite (link)"),
+            "Version DOI": p.get("Version DOI"), "Files in Prism": p.get("Files"),
+            "File(s)": shown, "File on SharePoint": sp,
+            "Original source": fl[0].get("Download from") if fl else m.get("File / source link"),
+            "Notes from preparation": m.get("Flags / to check"),
+            "Earlier description (May file)": m.get("Description before enhancement"),
+            "In Prism?": "yes" if p else "NOT FOUND",
+            "Reviewed (y/n)": None, "Issues found": None, "Action needed": None,
+        })
+        for f in fl:
+            file_rows.append({"record_id": rid, "Title": p.get("Title") or m.get("Title"), "File #": f.get("file_order"),
+                              "File name": str(f["file_name"]).replace("\\", "/").rsplit("/", 1)[-1],
+                              "Folder": str(f["file_name"]).replace("\\", "/").rsplit("/", 1)[0],
+                              "File on SharePoint": _sharepoint_link(sharepoint_files_url, f["file_name"]),
+                              "Original source": f.get("Download from"), "Prism record": p.get("Prism record"),
+                              "File OK? (y/n)": None, "File notes": None})
+
+    out = openpyxl.Workbook(); out.remove(out.active)
+    about = out.create_sheet("How to use")
+    lines = ["IVDRS & SUDORS: metadata review", "",
+             "Records tab: one row per Prism record, with its Prism page, the DOI to cite, the file(s) and where each file came from.",
+             "Files tab: one row per file (IVSU-0045 and IVSU-0127 have 16 county files each).",
+             "Yellow columns are for the reviewer: mark Reviewed, note any Issues, and choose an Action "
+             "(OK / fix metadata in Prism / replace file (new version) / remove).",
+             "'Notes from preparation' lists decisions and caveats recorded while the records were prepared "
+             "(changed dates, retitles, license notes, files known to need replacing).",
+             "'Earlier description (May file)' is the description the group supplied, kept for comparison where it was rewritten.",
+             "Fixing a file creates a new version in Prism: the 'DOI to cite' (parent DOI) stays the same."]
+    for i, t in enumerate(lines, 1):
+        x = about.cell(i, 1, t); x.font = Font(name="Arial", size=12 if i == 1 else 10, bold=i == 1); x.alignment = wrap
+    about.column_dimensions["A"].width = 110
+    rcols = list(rec_rows[0]) if rec_rows else []
+    w = {"record_id": 11, "Title": 50, "Resource type": 13, "Child community": 26, "Prism record": 32, "DOI to cite": 32,
+         "Version DOI": 24, "Files in Prism": 8, "File(s)": 40, "File on SharePoint": 30, "Original source": 32,
+         "Notes from preparation": 55, "Earlier description (May file)": 45, "In Prism?": 9,
+         "Reviewed (y/n)": 10, "Issues found": 40, "Action needed": 22}
+    review = ("Reviewed (y/n)", "Issues found", "Action needed")
+    ws = sheet(out, "Records", rcols, rec_rows, w, review, ("Prism record", "DOI to cite", "File on SharePoint", "Original source"))
+    dv = DataValidation(type="list", formula1='"OK,Fix metadata in Prism,Replace file (new version),Remove,Ask Karen"', allow_blank=True)
+    ws.add_data_validation(dv); dv.add(f"Q2:Q{len(rec_rows) + 1}")
+    yn = DataValidation(type="list", formula1='"y,n"', allow_blank=True); ws.add_data_validation(yn); yn.add(f"O2:O{len(rec_rows) + 1}")
+    fcols = list(file_rows[0]) if file_rows else []
+    fw = {"record_id": 11, "Title": 45, "File #": 6, "File name": 50, "Folder": 32, "File on SharePoint": 30,
+          "Original source": 40, "Prism record": 30, "File OK? (y/n)": 10, "File notes": 40}
+    ws2 = sheet(out, "Files", fcols, file_rows, fw, ("File OK? (y/n)", "File notes"), ("File on SharePoint", "Original source", "Prism record"))
+    yn2 = DataValidation(type="list", formula1='"y,n"', allow_blank=True); ws2.add_data_validation(yn2); yn2.add(f"I2:I{len(file_rows) + 1}")
+    out.save(out_path)
+    return {"records": len(rec_rows), "files": len(file_rows), "not in Prism": sum(r["In Prism?"] != "yes" for r in rec_rows)}
