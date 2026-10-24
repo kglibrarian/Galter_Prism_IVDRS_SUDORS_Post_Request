@@ -1,0 +1,5 @@
+requests
+openpyxl
+pypdf
+pillow
+playwright      # then run: python -m playwright install chromium   (02 and the browser fallback in 01)

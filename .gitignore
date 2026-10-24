@@ -1,0 +1,45 @@
+# ---- secrets: never commit ----
+config.py
+.env
+*.env
+!config.example.py
+
+# ---- data: the deposit workbook, enrichment results, logs ----
+*.xlsx
+*.xls
+*.csv
+*.tsv
+~$*
+
+# ---- data/ and output/ folders: kept locally, only the empty folders are committed ----
+data/*
+!data/.gitkeep
+output/*
+!output/.gitkeep
+
+# ---- downloaded and captured files (also if they end up outside data/) ----
+files/
+png_backups/
+canva_pages/
+test_capture/
+*.pdf
+*.png
+
+# ---- API responses and run outputs ----
+enrichment_raw/
+*.tmp
+*.part
+
+# ---- Python / Jupyter ----
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# ---- OS / editors ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
